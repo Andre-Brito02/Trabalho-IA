@@ -78,8 +78,24 @@ def calculaDistancia(rota, distancia):
     custo += distancia[rota[-1]][rota[0]]
     return custo
 
+# === HEURÍSTICA NEAREST NEIGHBOR ===
+def nearest_neighbor(num_cidades, matriz):
+    rota = [0]  # Começa na cidade 0
+    visitadas = {0}
+    while len(rota) < num_cidades:
+        atual = rota[-1]
+        menor_dist = float('inf')
+        proxima = None
+        for j in range(num_cidades):
+            if j not in visitadas and matriz[atual][j] < menor_dist:
+                menor_dist = matriz[atual][j]
+                proxima = j
+        rota.append(proxima)
+        visitadas.add(proxima)
+    return rota
+
 # === SELEÇÃO, CROSSOVER E MUTAÇÃO ===
-def selecao_torneio(populacao, matriz, tamanho_torneio=5):
+def selecao_torneio(populacao, matriz, tamanho_torneio=7):
     torneio = rd.sample(populacao, tamanho_torneio)
     return min(torneio, key=lambda r: r.custo)
 
@@ -94,9 +110,10 @@ def crossover_ox(pai1, pai2):
             while filho[pos % tamanho] is not None:
                 pos += 1
             filho[pos % tamanho] = cidade
+    assert all(c in filho for c in range(tamanho)), "Crossover gerou rota inválida"
     return filho
 
-def mutacao(rota, prob_mutacao=0.15):
+def mutacao(rota, prob_mutacao):
     if rd.random() < prob_mutacao:
         if rd.random() < 0.5:
             i, j = rd.sample(range(len(rota)), 2)
@@ -109,7 +126,7 @@ def mutacao(rota, prob_mutacao=0.15):
 def dois_opt(rota, matriz):
     melhor_rota = rota[:]
     melhor_custo = calculaDistancia(rota, matriz)
-    max_iteracoes = 10
+    max_iteracoes = 50
     iteracao = 0
     while iteracao < max_iteracoes:
         melhorou = False
@@ -130,13 +147,19 @@ def dois_opt(rota, matriz):
 # === ALGORITMO GENÉTICO ===
 def algoritmo_genetico(args):
     matriz, num_cidades, arquivo_nome = args
-    quantidade_de_rotas = max(50, num_cidades // 2)
-    populacao = [Rota(geraRotaUnica(num_cidades), calculaDistancia(geraRotaUnica(num_cidades), matriz)) for _ in range(quantidade_de_rotas)]
-    num_geracoes = 5000
+    quantidade_de_rotas = max(100, num_cidades)
+    num_geracoes = max(5000, num_cidades * 20)
     prob_crossover = 0.9
-    prob_mutacao = 0.15
     elitismo = 2
-    max_sem_melhora = 300
+    max_sem_melhora = max(300, num_cidades * 2)
+
+    # Inicialização sequencial da população
+    populacao = []
+    for _ in range(quantidade_de_rotas - 1):
+        rota = geraRotaUnica(num_cidades)
+        populacao.append(Rota(rota, calculaDistancia(rota, matriz)))
+    nn_rota = nearest_neighbor(num_cidades, matriz)
+    populacao.append(Rota(nn_rota, calculaDistancia(nn_rota, matriz)))
 
     melhor_custo = float('inf')
     sem_melhora = 0
@@ -147,6 +170,9 @@ def algoritmo_genetico(args):
         nova_populacao = []
         populacao.sort(key=lambda r: r.custo)
         nova_populacao.extend(populacao[:elitismo])
+
+        # Mutação adaptativa
+        prob_mutacao = 0.2 * (1 - geracao / num_geracoes) + 0.05
 
         while len(nova_populacao) < quantidade_de_rotas:
             pai1 = selecao_torneio(populacao, matriz)
@@ -162,6 +188,12 @@ def algoritmo_genetico(args):
             nova_populacao.append(Rota(filho1, calculaDistancia(filho1, matriz)))
             if len(nova_populacao) < quantidade_de_rotas:
                 nova_populacao.append(Rota(filho2, calculaDistancia(filho2, matriz)))
+
+        # Aplicar 2-opt a cada 50 gerações
+        if geracao % 50 == 0:
+            melhor_atual = min(populacao, key=lambda r: r.custo)
+            rota_opt, custo_opt = dois_opt(melhor_atual.rota, matriz)
+            nova_populacao.append(Rota(rota_opt, custo_opt))
 
         populacao = nova_populacao
         atual_melhor = min(populacao, key=lambda r: r.custo).custo

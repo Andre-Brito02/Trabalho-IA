@@ -4,52 +4,54 @@ import time
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 
-# === CLASSE ROTA ===
+# Cada indivíduo é uma instância de Rota
 class Rota:
     def __init__(self, rota, custo):
         self.rota = rota
         self.custo = custo
-
-# === FUNÇÃO PARA LER ARQUIVO TSP ===
+        
+# Função para ler arquivos TSP
 def ler_tsp(path):
-    cidades = []
+    cidades = [] # Lista de tuplas com as coordenadas da cidade
     tipo = 'EUC_2D'
-    lendo_coord = False
+    lendo_coordenada = False
     with open(path, 'r') as arquivo:
         for linha in arquivo:
             linha = linha.strip()
             if linha.startswith("EDGE_WEIGHT_TYPE"):
                 tipo = linha.split(":")[1].strip()
             elif linha == "NODE_COORD_SECTION":
-                lendo_coord = True
+                lendo_coordenada = True
                 continue
             elif linha == "EOF":
                 break
-            elif lendo_coord:
+            elif lendo_coordenada:
                 partes = linha.split()
                 if len(partes) >= 3:
                     try:
                         x = float(partes[1])
                         y = float(partes[2])
-                        cidades.append((x, y))
+                        cidades.append((x,y))
                     except ValueError:
                         pass
     return cidades, tipo
 
-# === CONVERSÃO E DISTÂNCIA ===
-def deg2rad(deg):
-    return math.pi * deg / 180.0
+# Conversão para tipos GEO
+def conversao_angulos_para_radianos(angulo_graus):
+    return math.pi * angulo_graus / 180.0
 
-def geo_distance(lat1, lon1, lat2, lon2):
-    R = 6371.0
-    lat1, lon1, lat2, lon2 = map(deg2rad, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+def distancia_geometrica(latitude1, longitude1, latitude2, longitude2):
+    raio_terra = 6371.0
+    # Converte coordenadas para radianos
+    latitude1, longitude1, latitude2, longitude2 = map(conversao_angulos_para_radianos, [latitude1, longitude1, latitude2, longitude2])
+    distancia_latitude = latitude2 - latitude1
+    distancia_longitude = longitude2 - longitude1
+    # === Fórmula de Haversine ===
+    a = math.sin(distancia_latitude/2)**2 + math.cos(latitude1) * math.cos(latitude2) * math.sin(distancia_longitude/2)**2
     c = 2 * math.asin(math.sqrt(a))
-    return round(R * c)
+    return round(raio_terra * c)
 
-# === MATRIZ DE DISTÂNCIAS ===
+# Matriz de distância
 def gerar_matriz_distancias(cidades, tipo):
     tamanho = len(cidades)
     matriz = [[0.0] * tamanho for _ in range(tamanho)]
@@ -58,83 +60,88 @@ def gerar_matriz_distancias(cidades, tipo):
             xi, yi = cidades[i]
             xj, yj = cidades[j]
             if tipo == "GEO":
-                dist = geo_distance(xi, yi, xj, yj)
+                distancia = distancia_geometrica(xi, yi, xj, yj)
             elif tipo == "EUC_2D":
-                dist = round(math.hypot(xj - xi, yj - yi))
+                distancia = round(math.hypot(xj - xi, yj - yi))
             else:
                 raise ValueError(f"Tipo de distância não suportado: {tipo}")
-            matriz[i][j] = dist
-            matriz[j][i] = dist
+            matriz[i][j] = distancia
+            matriz[j][i] = distancia
     return matriz
 
-# === GERA ROTA ALEATÓRIA ===
-def geraRotaUnica(tamanho):
+def gera_rota_unica(tamanho):
     return rd.sample(range(tamanho), tamanho)
 
-def calculaDistancia(rota, distancia):
+def calcula_distancia(rota, distancia):
     custo = 0
     for i in range(len(rota) - 1):
-        custo += distancia[rota[i]][rota[i + 1]]
+        custo += distancia[rota[i]][rota[i+1]]
     custo += distancia[rota[-1]][rota[0]]
     return custo
 
-# === HEURÍSTICA NEAREST NEIGHBOR ===
-def nearest_neighbor(num_cidades, matriz):
-    rota = [0]  # Começa na cidade 0
+# Gerar uma solução inicial razoável, ajudando o o AG a convergir mais rápido
+def vizinho_mais_proximo(numero_cidades, matriz):
+    rota = [0] # Começa na primeira cidade
     visitadas = {0}
-    while len(rota) < num_cidades:
+    while len(rota) < numero_cidades:
         atual = rota[-1]
-        menor_dist = float('inf')
+        # Busca pela cidade mais próxima
+        menor_distancia = float('inf')
         proxima = None
-        for j in range(num_cidades):
-            if j not in visitadas and matriz[atual][j] < menor_dist:
-                menor_dist = matriz[atual][j]
+        for j in range(numero_cidades):
+            if j not in visitadas and matriz[atual][j] < menor_distancia:
+                menor_distancia = matriz[atual][j]
                 proxima = j
         rota.append(proxima)
         visitadas.add(proxima)
     return rota
 
-# === SELEÇÃO, CROSSOVER E MUTAÇÃO ===
+# Seleciona individuos para cruzamento e mutacao com base em seu custo
 def selecao_torneio(populacao, matriz, tamanho_torneio=7):
     torneio = rd.sample(populacao, tamanho_torneio)
+    # encontra o elemento de menor custo
     return min(torneio, key=lambda r: r.custo)
 
-def crossover_ox(pai1, pai2):
+# Combina duas rotas e gera uma nova, preservando caracteristicas de ambos, mantendo a validação da rota
+def crossover_ordenado(pai1, pai2):
     tamanho = len(pai1)
     inicio, fim = sorted(rd.sample(range(tamanho), 2))
     filho = [None] * tamanho
     filho[inicio:fim] = pai1[inicio:fim]
-    pos = fim
+    posicao = fim
     for cidade in pai2:
         if cidade not in filho:
-            while filho[pos % tamanho] is not None:
-                pos += 1
-            filho[pos % tamanho] = cidade
+            while filho[posicao % tamanho] is not None:
+                posicao += 1
+            filho[posicao % tamanho] = cidade
     assert all(c in filho for c in range(tamanho)), "Crossover gerou rota inválida"
     return filho
 
-def mutacao(rota, prob_mutacao):
-    if rd.random() < prob_mutacao:
-        if rd.random() < 0.5:
+# Variações aleatórias para promover diversidade
+def mutacao(rota, probabilidade_mutacao):
+    rota = rota[:]
+    if rd.random() < probabilidade_mutacao:
+        if rd.random() < 0.5: # Troca
             i, j = rd.sample(range(len(rota)), 2)
             rota[i], rota[j] = rota[j], rota[i]
-        else:
+        else: # Inversão
             i, j = sorted(rd.sample(range(len(rota)), 2))
             rota[i:j+1] = reversed(rota[i:j+1])
     return rota
-
-def dois_opt(rota, matriz):
+        
+# Melhorar uma rota existente geradas pelo crossover e mutacao, otimizando a ordem para reduzir o custo total
+def heuristica_dois_opt(rota, matriz):
     melhor_rota = rota[:]
-    melhor_custo = calculaDistancia(rota, matriz)
-    max_iteracoes = 50
+    melhor_custo = calcula_distancia(rota, matriz)
+    maximo_iteracoes = 50
     iteracao = 0
-    while iteracao < max_iteracoes:
+    while iteracao < maximo_iteracoes:
         melhorou = False
         for i in range(1, len(rota) - 2):
             for j in range(i + 1, len(rota)):
                 if j - i == 1: continue
                 nova_rota = melhor_rota[:i] + melhor_rota[i:j][::-1] + melhor_rota[j:]
-                novo_custo = calculaDistancia(nova_rota, matriz)
+                novo_custo = calcula_distancia(nova_rota, matriz)
                 if novo_custo < melhor_custo:
                     melhor_rota = nova_rota
                     melhor_custo = novo_custo
@@ -144,105 +151,118 @@ def dois_opt(rota, matriz):
         iteracao += 1
     return melhor_rota, melhor_custo
 
-# === ALGORITMO GENÉTICO ===
+# Algoritmo Genético
 def algoritmo_genetico(args):
-    matriz, num_cidades, arquivo_nome = args
-    quantidade_de_rotas = max(100, num_cidades)
-    num_geracoes = max(5000, num_cidades * 20)
-    prob_crossover = 0.9
+    matriz, numero_cidades, nome_arquivo = args
+    quantidade_de_rotas = max(100, numero_cidades)
+    numero_geracoes = max(5000, numero_cidades * 20)
+    probabilidade_crossover = 0.9
     elitismo = 2
-    max_sem_melhora = max(300, num_cidades * 2)
-
-    # Inicialização sequencial da população
+    maximo_sem_melhora = max(300, numero_cidades * 2)
+    
     populacao = []
     for _ in range(quantidade_de_rotas - 1):
-        rota = geraRotaUnica(num_cidades)
-        populacao.append(Rota(rota, calculaDistancia(rota, matriz)))
-    nn_rota = nearest_neighbor(num_cidades, matriz)
-    populacao.append(Rota(nn_rota, calculaDistancia(nn_rota, matriz)))
-
+        rota = gera_rota_unica(numero_cidades)
+        populacao.append(Rota(rota, calcula_distancia(rota, matriz)))
+    rota_vizinho_proximo = vizinho_mais_proximo(numero_cidades, matriz)
+    populacao.append(Rota(rota_vizinho_proximo, calcula_distancia(rota_vizinho_proximo, matriz)))
+    
     melhor_custo = float('inf')
     sem_melhora = 0
     historico_custos = []
     inicio = time.time()
-
-    for geracao in range(num_geracoes):
+    
+    for geracao in range(numero_geracoes):
         nova_populacao = []
         populacao.sort(key=lambda r: r.custo)
         nova_populacao.extend(populacao[:elitismo])
-
-        # Mutação adaptativa
-        prob_mutacao = 0.2 * (1 - geracao / num_geracoes) + 0.05
-
+        
+        probabilidade_mutacao = 0.2 * (1 - geracao / numero_geracoes) + 0.05
+        
         while len(nova_populacao) < quantidade_de_rotas:
             pai1 = selecao_torneio(populacao, matriz)
             pai2 = selecao_torneio(populacao, matriz)
-            if rd.random() < prob_crossover:
-                filho1 = crossover_ox(pai1.rota, pai2.rota)
-                filho2 = crossover_ox(pai2.rota, pai1.rota)
+            if rd.random() < probabilidade_crossover:
+                filho1 = crossover_ordenado(pai1.rota, pai2.rota)
+                filho2 = crossover_ordenado(pai2.rota, pai1.rota)
             else:
                 filho1 = pai1.rota[:]
                 filho2 = pai2.rota[:]
-            filho1 = mutacao(filho1, prob_mutacao)
-            filho2 = mutacao(filho2, prob_mutacao)
-            nova_populacao.append(Rota(filho1, calculaDistancia(filho1, matriz)))
+            filho1 = mutacao(filho1, probabilidade_mutacao)
+            filho2 = mutacao(filho2, probabilidade_mutacao)
+            nova_populacao.append(Rota(filho1, calcula_distancia(filho1, matriz)))
             if len(nova_populacao) < quantidade_de_rotas:
-                nova_populacao.append(Rota(filho2, calculaDistancia(filho2, matriz)))
-
-        # Aplicar 2-opt a cada 50 gerações
+                nova_populacao.append(Rota(filho2, calcula_distancia(filho2, matriz)))
+                
         if geracao % 50 == 0:
             melhor_atual = min(populacao, key=lambda r: r.custo)
-            rota_opt, custo_opt = dois_opt(melhor_atual.rota, matriz)
+            rota_opt, custo_opt = heuristica_dois_opt(melhor_atual.rota, matriz)
             nova_populacao.append(Rota(rota_opt, custo_opt))
-
+            
         populacao = nova_populacao
         atual_melhor = min(populacao, key=lambda r: r.custo).custo
         historico_custos.append(atual_melhor)
-
+        
         if atual_melhor < melhor_custo:
             melhor_custo = atual_melhor
             sem_melhora = 0
         else:
             sem_melhora += 1
-        if sem_melhora >= max_sem_melhora:
+        if sem_melhora >= maximo_sem_melhora:
             break
-
+        
     melhor_rota = min(populacao, key=lambda r: r.custo)
-    rota_opt, custo_opt = dois_opt(melhor_rota.rota, matriz)
+    rota_opt, custo_opt = heuristica_dois_opt(melhor_rota.rota, matriz)
     fim = time.time()
     tempo_execucao = fim - inicio
-
-    print(f"✅ Melhor custo para {arquivo_nome}: {custo_opt}")
-
+        
+    print(f"✅ Melhor custo para {nome_arquivo}: {custo_opt}")
+        
     return {
-        "arquivo": arquivo_nome,
+        "arquivo": nome_arquivo,
         "caminho": rota_opt,
         "distancia": custo_opt,
         "tempo": tempo_execucao,
         "historico": historico_custos
     }
-
-# === MAIN ===
+        
+def plot_rota(cidades, rota, nome_arquivo, tipo):
+    rota_fechada = rota + [rota[0]]
+    x = [cidades[i][0] for i in rota_fechada]
+    y = [cidades[i][1] for i in rota_fechada]
+    plt.figure(figsize=(8, 6))
+    plt.plot(x, y, 'b-', linewidth=1, label='Rota')
+    plt.scatter(x[:-1], y[:-1], c='red', s=50, label='Cidades')
+    plt.title(f"Rota Ótima - {nome_arquivo} ({len(cidades)} cidades)")
+    plt.xlabel("Longitude" if tipo == "GEO" else "Coordenada X")
+    plt.ylabel("Latitude" if tipo == "GEO" else "Coordenada Y")
+    plt.legend()
+    plt.grid(True)
+    output_file = f"rota_{nome_arquivo.split('.')[0]}.png"
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    
 def main():
     rd.seed(42)
     arquivos = ["burma14.tsp", "ch150.tsp", "lin318.tsp"]
     tarefas = []
+    cidades_por_arquivos = {}
     for caminho in arquivos:
         try:
             cidades, tipo = ler_tsp(caminho)
             matriz = gerar_matriz_distancias(cidades, tipo)
             tarefas.append((matriz, len(cidades), caminho))
+            cidades_por_arquivos[caminho] = (cidades, tipo)
         except Exception as e:
             print(f"Erro ao processar {caminho}: {e}")
-
+    
     with Pool() as pool:
         resultados = pool.map(algoritmo_genetico, tarefas)
-
+        
     with open("melhores_custos.txt", "w") as f:
         for res in resultados:
             f.write(f"{res['arquivo']}: {res['distancia']}\n")
-
-    # === GRAFICO DE CUSTOS ===
+    
     for res in resultados:
         plt.figure()
         plt.plot(res['historico'])
@@ -251,8 +271,8 @@ def main():
         plt.title(f"Evolução da distância - {res['arquivo']}")
         plt.grid(True)
         plt.savefig(f"grafico_{res['arquivo'].split('.')[0]}.png")
-
-    # === GRAFICO DE TEMPO DE EXECUÇÃO ===
+        plt.close()
+        
     plt.figure()
     nomes = [res['arquivo'] for res in resultados]
     tempos = [res['tempo'] for res in resultados]
@@ -261,6 +281,12 @@ def main():
     plt.title("Tempo de execução por instância")
     plt.grid(axis='y')
     plt.savefig("grafico_tempos_execucao.png")
-
+    plt.close()
+    
+    for res in resultados:
+        arquivo = res['arquivo']
+        cidades, tipo = cidades_por_arquivos[arquivo]
+        plot_rota(cidades, res['caminho'], arquivo, tipo)
+        
 if __name__ == "__main__":
     main()

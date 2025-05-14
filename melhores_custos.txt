@@ -1,3 +1,3 @@
 burma14.tsp: 3354
-ch150.tsp: 6864
-lin318.tsp: 45377
+ch150.tsp: 6829
+lin318.tsp: 44443

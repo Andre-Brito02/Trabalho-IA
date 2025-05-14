@@ -156,7 +156,6 @@ def algoritmo_genetico(args):
     matriz, numero_cidades, nome_arquivo = args
     quantidade_de_rotas = max(100, numero_cidades)
     numero_geracoes = max(5000, numero_cidades * 20)
-    probabilidade_crossover = 0.9
     elitismo = 2
     maximo_sem_melhora = max(300, numero_cidades * 2)
     
@@ -182,14 +181,16 @@ def algoritmo_genetico(args):
         while len(nova_populacao) < quantidade_de_rotas:
             pai1 = selecao_torneio(populacao, matriz)
             pai2 = selecao_torneio(populacao, matriz)
-            if rd.random() < probabilidade_crossover:
-                filho1 = crossover_ordenado(pai1.rota, pai2.rota)
-                filho2 = crossover_ordenado(pai2.rota, pai1.rota)
-            else:
-                filho1 = pai1.rota[:]
-                filho2 = pai2.rota[:]
-            filho1 = mutacao(filho1, probabilidade_mutacao)
-            filho2 = mutacao(filho2, probabilidade_mutacao)
+            
+            filho1 = crossover_ordenado(pai1.rota, pai2.rota)
+            filho2 = crossover_ordenado(pai2.rota, pai1.rota)
+            
+            if rd.random() < probabilidade_mutacao:
+                filho1 = mutacao(filho1, probabilidade_mutacao)
+            
+            if rd.random() < probabilidade_mutacao:
+                filho2 = mutacao(filho2, probabilidade_mutacao)
+                
             nova_populacao.append(Rota(filho1, calcula_distancia(filho1, matriz)))
             if len(nova_populacao) < quantidade_de_rotas:
                 nova_populacao.append(Rota(filho2, calcula_distancia(filho2, matriz)))

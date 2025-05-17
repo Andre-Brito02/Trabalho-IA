@@ -97,7 +97,7 @@ def vizinho_mais_proximo(numero_cidades, matriz):
     return rota
 
 # Seleciona individuos para cruzamento e mutacao com base em seu custo
-def selecao_torneio(populacao, matriz, tamanho_torneio=7):
+def selecao_torneio(populacao, tamanho_torneio=7):
     torneio = rd.sample(populacao, tamanho_torneio)
     # encontra o elemento de menor custo
     return min(torneio, key=lambda r: r.custo)
@@ -179,8 +179,8 @@ def algoritmo_genetico(args):
         probabilidade_mutacao = 0.2 * (1 - geracao / numero_geracoes) + 0.05
         
         while len(nova_populacao) < quantidade_de_rotas:
-            pai1 = selecao_torneio(populacao, matriz)
-            pai2 = selecao_torneio(populacao, matriz)
+            pai1 = selecao_torneio(populacao)
+            pai2 = selecao_torneio(populacao)
             
             filho1 = crossover_ordenado(pai1.rota, pai2.rota)
             filho2 = crossover_ordenado(pai2.rota, pai1.rota)
@@ -226,22 +226,6 @@ def algoritmo_genetico(args):
         "tempo": tempo_execucao,
         "historico": historico_custos
     }
-        
-def plot_rota(cidades, rota, nome_arquivo, tipo):
-    rota_fechada = rota + [rota[0]]
-    x = [cidades[i][0] for i in rota_fechada]
-    y = [cidades[i][1] for i in rota_fechada]
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, y, 'b-', linewidth=1, label='Rota')
-    plt.scatter(x[:-1], y[:-1], c='red', s=50, label='Cidades')
-    plt.title(f"Rota Ótima - {nome_arquivo} ({len(cidades)} cidades)")
-    plt.xlabel("Longitude" if tipo == "GEO" else "Coordenada X")
-    plt.ylabel("Latitude" if tipo == "GEO" else "Coordenada Y")
-    plt.legend()
-    plt.grid(True)
-    output_file = f"rota_{nome_arquivo.split('.')[0]}.png"
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    plt.close()
     
 def main():
     rd.seed(42)
@@ -283,11 +267,6 @@ def main():
     plt.grid(axis='y')
     plt.savefig("grafico_tempos_execucao.png")
     plt.close()
-    
-    for res in resultados:
-        arquivo = res['arquivo']
-        cidades, tipo = cidades_por_arquivos[arquivo]
-        plot_rota(cidades, res['caminho'], arquivo, tipo)
-        
+            
 if __name__ == "__main__":
     main()
